@@ -24,9 +24,23 @@ class ExerciseCounter:
         self.high_thresh = high_thresh
         self.ema = EMAFilter(alpha=alpha)
         self.state = CounterState()
+        self.feedback: str = ""
 
     def compute_primary_angle(self, pose: PoseResult) -> Optional[float]:  # to override
         raise NotImplementedError
+
+    def compute_feedback(self, angle: float) -> str:
+        # Generic feedback based on thresholds and stage
+        margin = 8.0
+        if self.state.stage in ("start", "up") and angle < (self.low_thresh + margin):
+            return "Good depth"
+        if self.state.stage == "down" and angle > (self.low_thresh + margin):
+            return "Go deeper"
+        if self.state.stage == "down" and angle < (self.low_thresh - 25):
+            return "Careful: too deep"
+        if self.state.stage == "up" and angle < (self.high_thresh - margin):
+            return "Extend more"
+        return ""
 
     def update(self, pose: Optional[PoseResult]) -> None:
         if pose is None:
@@ -45,6 +59,8 @@ class ExerciseCounter:
             if angle_smooth > self.high_thresh:
                 self.state.stage = "up"
                 self.state.rep_count += 1
+
+        self.feedback = self.compute_feedback(angle_smooth)
 
 
 class SquatCounter(ExerciseCounter):
@@ -78,10 +94,27 @@ class PushupCounter(ExerciseCounter):
         return compute_angle_degrees(shoulder, elbow, wrist)
 
 
+class CurlCounter(ExerciseCounter):
+    def __init__(self) -> None:
+        # Bicep curl: flex when < ~50, extended when > ~160
+        super().__init__(name="curl", low_thresh=50.0, high_thresh=160.0, alpha=0.25)
+
+    def compute_primary_angle(self, pose: PoseResult) -> Optional[float]:
+        left_vis = pose.visibility[LM["left_elbow"]]
+        right_vis = pose.visibility[LM["right_elbow"]]
+        side = "left" if left_vis >= right_vis else "right"
+        shoulder = lm_get(pose.world_xyz, f"{side}_shoulder")
+        elbow = lm_get(pose.world_xyz, f"{side}_elbow")
+        wrist = lm_get(pose.world_xyz, f"{side}_wrist")
+        return compute_angle_degrees(shoulder, elbow, wrist)
+
+
 def create_exercise_counter(name: str) -> ExerciseCounter:
     name = name.lower()
     if name == "squat":
         return SquatCounter()
     if name == "pushup":
         return PushupCounter()
+    if name == "curl":
+        return CurlCounter()
     raise ValueError(f"Unknown exercise {name}")

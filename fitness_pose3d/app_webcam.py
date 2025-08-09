@@ -13,7 +13,7 @@ from visualization.draw import Drawer
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Webcam 3D pose fitness demo")
     parser.add_argument("--camera", type=int, default=0, help="Webcam index (default 0)")
-    parser.add_argument("--exercise", type=str, default="squat", choices=["squat", "pushup"], help="Exercise to count")
+    parser.add_argument("--exercise", type=str, default="squat", choices=["squat", "pushup", "curl"], help="Exercise to count")
     parser.add_argument("--model-complexity", type=int, default=1, choices=[0, 1, 2], help="MediaPipe model complexity")
     parser.add_argument("--min-detection-confidence", type=float, default=0.5)
     parser.add_argument("--min-tracking-confidence", type=float, default=0.5)
@@ -51,6 +51,8 @@ def main() -> None:
                 "reps": counter.state.rep_count,
                 "stage": counter.state.stage,
                 "fps": 0.0,
+                "angle": counter.state.last_angle,
+                "feedback": getattr(counter, 'feedback', ''),
             }
 
             if result is not None:

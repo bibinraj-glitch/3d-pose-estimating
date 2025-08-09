@@ -11,12 +11,36 @@ const dom = {
   startBtn: document.getElementById("startBtn"),
   stopBtn: document.getElementById("stopBtn"),
   resetBtn: document.getElementById("resetBtn"),
+  flipBtn: document.getElementById("flipBtn"),
+  torchBtn: document.getElementById("torchBtn"),
+  downloadBtn: document.getElementById("downloadBtn"),
+  soundChk: document.getElementById("soundChk"),
 };
+
+// Audio beep
+let audioCtx = null;
+function beep(freq=880, durMs=120){
+  if (!dom.soundChk.checked) return;
+  try{
+    audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.frequency.value = freq; o.type = 'sine';
+    g.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.2, audioCtx.currentTime+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + durMs/1000);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + durMs/1000 + 0.01);
+  }catch(e){ /* ignore */ }
+}
 
 let landmarker = null;
 let running = false;
 let lastVideoTime = -1;
 let rafId = null;
+let currentFacing = 'environment';
+let currentTrack = null;
+let session = { events: [], startedAt: null };
 
 const counter = {
   name: "squat",
@@ -33,9 +57,6 @@ class EMA {
   update(x) { this.value = this.value == null ? x : this.alpha * x + (1 - this.alpha) * this.value; return this.value; }
 }
 
-function toRad(deg) { return deg * Math.PI / 180; }
-function toDeg(rad) { return rad * 180 / Math.PI; }
-
 function angleDegrees(a, b, c) {
   const ba = [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
   const bc = [c[0]-b[0], c[1]-b[1], c[2]-b[2]];
@@ -43,17 +64,19 @@ function angleDegrees(a, b, c) {
   const nba = Math.hypot(ba[0],ba[1],ba[2]) + 1e-8;
   const nbc = Math.hypot(bc[0],bc[1],bc[2]) + 1e-8;
   let cos = dot/(nba*nbc); cos = Math.max(-1, Math.min(1, cos));
-  return toDeg(Math.acos(cos));
+  return Math.acos(cos) * 180/Math.PI;
 }
 
 function setExercise(name) {
   counter.name = name;
   if (name === "squat") { counter.low = 80; counter.high = 160; counter.ema = new EMA(0.2); }
   if (name === "pushup") { counter.low = 70; counter.high = 160; counter.ema = new EMA(0.25); }
+  if (name === "curl") { counter.low = 50; counter.high = 160; counter.ema = new EMA(0.25); }
   counter.stage = "start"; counter.reps = 0; counter.angle = 0;
   dom.reps.textContent = counter.reps;
   dom.stage.textContent = counter.stage;
   dom.angle.textContent = "-";
+  session = { events: [], startedAt: Date.now() };
 }
 
 setExercise(dom.exercise.value);
@@ -74,10 +97,36 @@ dom.stopBtn.addEventListener("click", () => {
   if (rafId) cancelAnimationFrame(rafId);
 });
 
+dom.flipBtn.addEventListener('click', async ()=>{
+  currentFacing = currentFacing === 'environment' ? 'user' : 'environment';
+  await ensureCamera();
+});
+
+let torchOn = false;
+dom.torchBtn.addEventListener('click', async ()=>{
+  try{
+    if (!currentTrack) return;
+    const caps = currentTrack.getCapabilities?.();
+    if (caps && 'torch' in caps) {
+      torchOn = !torchOn;
+      await currentTrack.applyConstraints({ advanced: [{ torch: torchOn }] });
+    }
+  }catch(e){ /* ignore */ }
+});
+
+dom.downloadBtn.addEventListener('click', ()=>{
+  const blob = new Blob([JSON.stringify({ exercise: counter.name, session }, null, 2)], {type:'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `pose3d_${counter.name}_${new Date().toISOString()}.json`; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+});
+
 async function ensureCamera() {
-  if (dom.video.srcObject) return;
-  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+  if (dom.video.srcObject) {
+    dom.video.srcObject.getTracks().forEach(t=>t.stop());
+  }
+  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: currentFacing }, audio: false });
   dom.video.srcObject = stream;
+  currentTrack = stream.getVideoTracks()[0] || null;
   await dom.video.play();
   resizeCanvas();
 }
@@ -101,8 +150,7 @@ async function ensureLandmarker() {
   });
 }
 
-function computeAngleAndUpdate(worldLandmarks, visibility) {
-  // Visibility fallback: choose side with better joint visibility
+function computeAngle(worldLandmarks, visibility) {
   const idx = (name) => ({
     left_hip: 23, right_hip: 24, left_knee: 25, right_knee: 26, left_ankle: 27, right_ankle: 28,
     left_shoulder: 11, right_shoulder: 12, left_elbow: 13, right_elbow: 14, left_wrist: 15, right_wrist: 16,
@@ -112,29 +160,28 @@ function computeAngleAndUpdate(worldLandmarks, visibility) {
   const lvisElbow = visibility[13] ?? 0, rvisElbow = visibility[14] ?? 0;
 
   if (counter.name === "squat") {
-    const sideLeft = lvisKnee >= rvisKnee;
-    const hip = worldLandmarks[sideLeft ? idx("left_hip") : idx("right_hip")];
-    const knee = worldLandmarks[sideLeft ? idx("left_knee") : idx("right_knee")];
-    const ankle = worldLandmarks[sideLeft ? idx("left_ankle") : idx("right_ankle")];
-    const ang = angleDegrees(hip, knee, ankle);
-    return ang;
-  } else {
-    const sideLeft = lvisElbow >= rvisElbow;
-    const shoulder = worldLandmarks[sideLeft ? idx("left_shoulder") : idx("right_shoulder")];
-    const elbow = worldLandmarks[sideLeft ? idx("left_elbow") : idx("right_elbow")];
-    const wrist = worldLandmarks[sideLeft ? idx("left_wrist") : idx("right_wrist")];
-    const ang = angleDegrees(shoulder, elbow, wrist);
-    return ang;
+    const left = lvisKnee >= rvisKnee;
+    const hip = worldLandmarks[left ? idx("left_hip") : idx("right_hip")];
+    const knee = worldLandmarks[left ? idx("left_knee") : idx("right_knee")];
+    const ankle = worldLandmarks[left ? idx("left_ankle") : idx("right_ankle")];
+    return angleDegrees(hip, knee, ankle);
+  } else if (counter.name === 'pushup' || counter.name === 'curl') {
+    const left = lvisElbow >= rvisElbow;
+    const shoulder = worldLandmarks[left ? idx("left_shoulder") : idx("right_shoulder")];
+    const elbow = worldLandmarks[left ? idx("left_elbow") : idx("right_elbow")];
+    const wrist = worldLandmarks[left ? idx("left_wrist") : idx("right_wrist")];
+    return angleDegrees(shoulder, elbow, wrist);
   }
 }
 
 function updateCounter(angle) {
   const a = counter.ema.update(angle);
+  const prevStage = counter.stage;
   counter.angle = a;
   if (counter.stage === "start" || counter.stage === "up") {
     if (a < counter.low) counter.stage = "down";
   } else if (counter.stage === "down") {
-    if (a > counter.high) { counter.stage = "up"; counter.reps += 1; }
+    if (a > counter.high) { counter.stage = "up"; counter.reps += 1; if (prevStage==='down') { beep(); session.events.push({t:Date.now(), type:'rep', reps:counter.reps}); } }
   }
   dom.stage.textContent = counter.stage;
   dom.reps.textContent = counter.reps.toString();
@@ -170,7 +217,7 @@ async function loop() {
     const results = await landmarker.detectForVideo(dom.video, now);
     draw(results);
     if (results.worldLandmarks?.length) {
-      const angle = computeAngleAndUpdate(results.worldLandmarks[0], results.poseLandmarks[0].map(l=>l.visibility ?? 0));
+      const angle = computeAngle(results.worldLandmarks[0], results.poseLandmarks[0].map(l=>l.visibility ?? 0));
       if (angle != null && !Number.isNaN(angle)) updateCounter(angle);
     }
     updateFps(t0);

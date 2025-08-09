@@ -53,7 +53,9 @@ class Drawer:
             f"Exercise: {hud.get('exercise','-')}",
             f"Stage: {hud.get('stage','-')}",
             f"Reps: {hud.get('reps',0)}",
+            f"Angle: {int(hud.get('angle',0))}",
             f"FPS: {hud.get('fps',0.0):.1f}",
+            f"{hud.get('feedback','')}"
         ]
         for i, text in enumerate(lines):
             yy = y + i * 24
