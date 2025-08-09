@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fitness Pose 3D</title>
+    <meta name="theme-color" content="#0f172a" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">Fitness Pose 3D</div>
+      <nav class="controls">
+        <label>
+          Exercise
+          <select id="exercise">
+            <option value="squat">Squat</option>
+            <option value="pushup">Push-up</option>
+            <option value="curl">Bicep Curl</option>
+          </select>
+        </label>
+        <button id="startBtn">Start</button>
+        <button id="stopBtn" disabled>Stop</button>
+        <button id="resetBtn">Reset</button>
+        <button id="flipBtn" title="Switch Camera">Flip</button>
+        <button id="torchBtn" title="Toggle Torch">Torch</button>
+        <button id="downloadBtn" title="Download Session">Download</button>
+        <label class="switch"><input type="checkbox" id="soundChk" checked> Sound</label>
+      </nav>
+    </header>
+
+    <main class="app-main">
+      <section class="video-wrap">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="overlay"></canvas>
+        <div class="hud">
+          <div class="hud-card">
+            <div class="label">Stage</div>
+            <div class="value" id="stage">start</div>
+          </div>
+          <div class="hud-card">
+            <div class="label">Reps</div>
+            <div class="value" id="reps">0</div>
+          </div>
+          <div class="hud-card">
+            <div class="label">Angle</div>
+            <div class="value" id="angle">-</div>
+          </div>
+          <div class="hud-card">
+            <div class="label">FPS</div>
+            <div class="value" id="fps">0</div>
+          </div>
+        </div>
+      </section>
+      <section class="tips">
+        <h3>Tips</h3>
+        <ul>
+          <li>Ensure your full body is visible in the frame.</li>
+          <li>For mobile, rotate to landscape for a wider view.</li>
+          <li>Use good lighting and a stable camera position.</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer class="app-footer">Demo only — not a medical or coaching tool.</footer>
+
+    <script>
+      if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js'); }
+    </script>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

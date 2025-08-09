@@ -1,0 +1,9 @@
+{
+  "name": "Fitness Pose 3D",
+  "short_name": "Pose3D",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": []
+}
