@@ -29,6 +29,13 @@ python app_webcam.py --exercise pushup
 python app_video.py --input path/to/video.mp4 --exercise squat --output out.mp4
 ```
 
+- Web (mobile-ready UI, runs on-device in browser):
+
+```bash
+uvicorn web.server:app --host 0.0.0.0 --port 7860
+# open http://localhost:7860 on desktop, or phone via your LAN IP: http://<your-ip>:7860
+```
+
 - Common flags:
   - `--model-complexity {0,1,2}`: higher is more accurate but slower (default 1)
   - `--min-detection-confidence 0.5` and `--min-tracking-confidence 0.5`
